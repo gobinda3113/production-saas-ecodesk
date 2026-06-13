@@ -1,0 +1,19 @@
+{
+  "name": "EchoDesk",
+  "short_name": "EchoDesk",
+  "description": "Auto-Reply Hub for Nepali Merchants",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F6F3",
+  "theme_color": "#c8960c",
+  "orientation": "portrait-primary",
+  "categories": ["business", "communication"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

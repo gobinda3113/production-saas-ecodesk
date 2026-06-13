@@ -1,0 +1,485 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  DELETED
+}
+
+enum ClientStatus {
+  ACTIVE
+  DISABLED
+  PENDING
+}
+
+enum PlanCode {
+  FREE_TRIAL
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  EXPIRED
+  REVOKED
+}
+
+enum MatchMode {
+  EXACT
+  CONTAINS_ANY
+  ALL_WORDS
+}
+
+enum LedgerType {
+  CREDIT_PURCHASE
+  CREDIT_DEBIT
+  CREDIT_REFUND
+  ADMIN_TOP_UP
+  PLAN_ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentGateway {
+  ESEWA
+  KHALTI
+}
+
+enum ActivityStatus {
+  REPLIED
+  NO_MATCH
+  ERROR
+  SUPPRESSED_DUPLICATE
+}
+
+enum QueueJobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum NotificationType {
+  CREDIT_LOW
+  PLATFORM_DISCONNECTED
+  WEEKLY_SUMMARY
+  PAYMENT_COMPLETED
+  SYSTEM_ALERT
+}
+
+enum MediaKind {
+  IMAGE
+  GIF
+  VIDEO
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  name           String?
+  status         UserStatus      @default(ACTIVE)
+  lastLoginAt    DateTime?
+  clientId       String?
+  client         Client?         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  teamMemberships TeamMember[]
+  createdKeywordRules KeywordRule[] @relation("RuleCreator")
+  userRoles      UserRole[]
+  sessions       Session[]
+  activityLogs   ActivityLog[]   @relation("ActorActivityLogs")
+  auditLogs      AuditLog[]      @relation("ActorAuditLogs")
+  notifications  Notification[]
+  mediaUploads   MediaUpload[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  @@index([clientId])
+  @@index([status, deletedAt])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expires])
+}
+
+model Role {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  name            String
+  description     String?
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  resource        String
+  action          String
+  description     String?
+  rolePermissions RolePermission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([resource, action])
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Client {
+  id                  String               @id @default(cuid())
+  businessName        String
+  slug                String               @unique
+  contactEmail        String               @unique
+  plan                PlanCode             @default(FREE_TRIAL)
+  status              ClientStatus         @default(ACTIVE)
+  users               User[]
+  teamMembers         TeamMember[]
+  keywordRules        KeywordRule[]
+  platformConnections PlatformConnection[]
+  creditWallet        CreditWallet?
+  creditLedger        CreditLedger[]
+  transactions        Transaction[]
+  paymentEvents       PaymentEvent[]
+  activityLogs        ActivityLog[]
+  notifications       Notification[]
+  webhookLogs         WebhookLog[]
+  queueJobs           QueueJob[]
+  mediaUploads        MediaUpload[]
+  settings            Setting[]
+  auditLogs           AuditLog[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+
+  @@index([plan, status])
+  @@index([deletedAt])
+}
+
+model TeamMember {
+  id        String     @id @default(cuid())
+  clientId  String
+  userId    String
+  role      String
+  status    UserStatus @default(ACTIVE)
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  @@unique([clientId, userId])
+  @@index([clientId, status])
+}
+
+model KeywordRule {
+  id                  String         @id @default(cuid())
+  clientId            String
+  client              Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keyword             String
+  normalizedKeyword   String
+  matchMode           MatchMode
+  replyMessage        String
+  active              Boolean        @default(true)
+  applyToAllPosts     Boolean        @default(true)
+  instagramPostUrl    String?
+  facebookPostUrl     String?
+  tiktokPostUrl       String?
+  perPlatformReplies  Json?
+  hitCount            Int            @default(0)
+  createdById         String
+  createdBy           User           @relation("RuleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  mediaUploads        MediaUpload[]
+  activityLogs        ActivityLog[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  @@unique([clientId, normalizedKeyword, deletedAt])
+  @@index([clientId, active, matchMode])
+  @@index([createdById])
+  @@index([clientId, deletedAt])
+}
+
+model PlatformConnection {
+  id                 String           @id @default(cuid())
+  clientId           String
+  platform           Platform
+  accountId          String
+  accountName        String
+  status             ConnectionStatus @default(DISCONNECTED)
+  encryptedToken     String?
+  encryptedRefresh   String?
+  scopes             String[]
+  tokenExpiresAt     DateTime?
+  disconnectedAt     DateTime?
+  client             Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  webhookLogs        WebhookLog[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  deletedAt          DateTime?
+
+  @@unique([clientId, platform])
+  @@index([platform, status])
+  @@index([tokenExpiresAt])
+}
+
+model CreditWallet {
+  id        String   @id @default(cuid())
+  clientId  String   @unique
+  balance   Int      @default(0)
+  reserved  Int      @default(0)
+  version   Int      @default(1)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CreditLedger {
+  id            String      @id @default(cuid())
+  clientId      String
+  transactionId String?
+  activityLogId String?
+  type          LedgerType
+  amount        Int
+  balanceAfter  Int
+  reason        String
+  metadata      Json?
+  client        Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  activityLog   ActivityLog? @relation(fields: [activityLogId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([transactionId])
+}
+
+model Transaction {
+  id              String            @id @default(cuid())
+  clientId        String
+  gateway         PaymentGateway
+  gatewayRef      String?           @unique
+  status          TransactionStatus @default(PENDING)
+  plan            PlanCode
+  amountNpr       Int
+  credits         Int
+  idempotencyKey  String            @unique
+  client          Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ledgerEntries   CreditLedger[]
+  paymentEvents   PaymentEvent[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  @@index([clientId, createdAt])
+  @@index([gateway, status])
+}
+
+model PaymentEvent {
+  id            String         @id @default(cuid())
+  clientId      String
+  transactionId String?
+  gateway       PaymentGateway
+  eventType     String
+  signatureHash String
+  payload       Json
+  processedAt   DateTime?
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  transaction   Transaction?   @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([gateway, eventType])
+}
+
+model ActivityLog {
+  id              String         @id @default(cuid())
+  clientId        String
+  keywordRuleId   String?
+  actorUserId     String?
+  platform        Platform?
+  externalUserId  String?
+  externalPostUrl String?
+  messagePreview  String
+  matchedKeyword  String?
+  matchStatus     ActivityStatus
+  processingMs    Int
+  duplicateKey    String?
+  errorCode       String?
+  metadata        Json?
+  client          Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keywordRule     KeywordRule?   @relation(fields: [keywordRuleId], references: [id], onDelete: SetNull)
+  actor           User?          @relation("ActorActivityLogs", fields: [actorUserId], references: [id], onDelete: SetNull)
+  ledgerEntries   CreditLedger[]
+  createdAt       DateTime       @default(now())
+  deletedAt       DateTime?
+
+  @@index([clientId, createdAt])
+  @@index([keywordRuleId])
+  @@unique([duplicateKey])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  clientId  String
+  userId    String?
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  client    Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user      User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+  deletedAt DateTime?
+
+  @@index([clientId, readAt])
+  @@index([userId])
+}
+
+model WebhookLog {
+  id                   String              @id @default(cuid())
+  clientId             String?
+  platformConnectionId String?
+  platform             Platform
+  eventType            String
+  messagePreview       String
+  matchedKeyword       String?
+  matchStatus          ActivityStatus
+  processingMs         Int
+  requestId            String              @unique
+  payload              Json
+  responseStatus       Int
+  errorMessage         String?
+  client               Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  platformConnection   PlatformConnection? @relation(fields: [platformConnectionId], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([platform, eventType])
+  @@index([matchStatus])
+}
+
+model QueueJob {
+  id           String         @id @default(cuid())
+  clientId     String
+  bullJobId    String         @unique
+  queueName    String
+  status       QueueJobStatus
+  attempts     Int            @default(0)
+  maxAttempts  Int            @default(3)
+  payload      Json
+  lastError    String?
+  scheduledAt  DateTime?
+  completedAt  DateTime?
+  client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([clientId, createdAt])
+  @@index([queueName, status])
+}
+
+model MediaUpload {
+  id            String      @id @default(cuid())
+  clientId      String
+  keywordRuleId String?
+  uploadedById  String
+  kind          MediaKind
+  mimeType      String
+  byteSize      Int
+  storageKey    String      @unique
+  publicUrl     String?
+  checksumSha256 String
+  client        Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keywordRule   KeywordRule? @relation(fields: [keywordRuleId], references: [id], onDelete: SetNull)
+  uploadedBy    User        @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt     DateTime    @default(now())
+  deletedAt     DateTime?
+
+  @@index([clientId, createdAt])
+  @@index([keywordRuleId])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  clientId  String
+  key       String
+  value     Json
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([clientId, key])
+  @@index([clientId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  clientId    String?
+  action      String
+  resource    String
+  resourceId  String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  actor       User?    @relation("ActorAuditLogs", fields: [actorUserId], references: [id], onDelete: SetNull)
+  client      Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([clientId, createdAt])
+  @@index([resource, resourceId])
+}
